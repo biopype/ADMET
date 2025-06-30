@@ -1,114 +1,61 @@
 import streamlit as st
-
-# Try to import RDKit with proper error handling
-try:
-    from rdkit import Chem
-    from rdkit.Chem import Descriptors
-    RDKIT_AVAILABLE = True
-except ImportError:
-    RDKIT_AVAILABLE = False
-    st.error("⚠️ RDKit is not available. Please install it or use the alternative approach below.")
+import requests
 
 st.set_page_config(page_title="Drug-Likeness & ADMET Predictor", page_icon="💊")
-st.title("💊 Drug-Likeness & ADMET Predictor")
 
-if not RDKIT_AVAILABLE:
-    st.markdown("""
-    ## RDKit Installation Issue
-    
-    RDKit is required for this application but couldn't be imported. This is common in cloud deployments.
-    
-    **Solutions:**
-    1. Create a `requirements.txt` file with: `rdkit-pypi`
-    2. Or use conda with `environment.yml` file
-    3. Consider using alternative chemistry libraries
-    """)
-    
-    st.info("The app will still show the interface below, but calculations won't work without RDKit.")
-
+st.title("💊 Drug-Likeness & ADMET Predictor (API-Based)")
 st.markdown("""
-Enter a **SMILES** string to evaluate drug-likeness based on:
-- Lipinski's Rule of 5
-- Basic physicochemical properties
+Enter a **SMILES** string to evaluate drug-likeness using:
+- Lipinski's Rule of 5 (calculated manually)
+- ADMET properties via **ADMETlab 2.0 API**
 """)
 
-smiles = st.text_input("Enter SMILES string (e.g., CC(=O)Oc1ccccc1C(=O)O):")
+smiles = st.text_input("Enter SMILES string:")
+
+def get_admetlab_data(smiles):
+    url = "https://admetmesh.scbdd.com/service/predict"
+    payload = {"smiles": smiles}
+    try:
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except:
+        return None
 
 if smiles:
-    if not RDKIT_AVAILABLE:
-        st.error("Cannot process SMILES: RDKit is not available.")
-        st.info("Please check the installation instructions above.")
-        st.stop()
-    
-    try:
-        # Validate SMILES
-        mol = Chem.MolFromSmiles(smiles)
-        
-        if mol is None:
-            st.error("Invalid SMILES string. Please check the input.")
-            st.stop()
-        
-        # Calculate molecular properties
-        mw = Descriptors.MolWt(mol)
-        logp = Descriptors.MolLogP(mol)
-        hbd = Descriptors.NumHDonors(mol)
-        hba = Descriptors.NumHAcceptors(mol)
-        
-        # Display results
-        st.subheader("Molecular Properties:")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Molecular Weight", f"{mw:.2f} g/mol")
-            st.metric("H-bond Donors", hbd)
-        
-        with col2:
-            st.metric("LogP (lipophilicity)", f"{logp:.2f}")
-            st.metric("H-bond Acceptors", hba)
-        
-        # Lipinski's Rule of 5 evaluation
-        st.subheader("Lipinski's Rule of 5:")
-        
-        # Individual rule checks
-        rules = {
-            "Molecular Weight < 500 Da": (mw < 500, mw),
-            "LogP < 5": (logp < 5, logp),
-            "H-bond Donors ≤ 5": (hbd <= 5, hbd),
-            "H-bond Acceptors ≤ 10": (hba <= 10, hba)
-        }
-        
-        passed_rules = 0
-        for rule, (passed, value) in rules.items():
-            if passed:
-                st.success(f"✅ {rule} (Value: {value:.2f})")
-                passed_rules += 1
-            else:
-                st.error(f"❌ {rule} (Value: {value:.2f})")
-        
-        # Overall assessment
-        st.subheader("Overall Assessment:")
-        if passed_rules == 4:
-            st.success("🎉 **Drug-like**: Passes all Lipinski's Rules!")
-        elif passed_rules >= 3:
-            st.warning(f"⚠️ **Borderline**: Passes {passed_rules}/4 rules")
+    with st.spinner("Fetching data from ADMETlab..."):
+        data = get_admetlab_data(smiles)
+
+    if data and 'data' in data:
+        props = data['data'][0]
+
+        mw = float(props.get("MW", 0))
+        logp = float(props.get("MLOGP", 0))
+        hbd = int(props.get("nHDon", 0))
+        hba = int(props.get("nHAcc", 0))
+
+        st.subheader("Molecular Properties")
+        st.write(f"**Molecular Weight**: {mw} g/mol")
+        st.write(f"**LogP (MLogP)**: {logp}")
+        st.write(f"**H-bond Donors**: {hbd}")
+        st.write(f"**H-bond Acceptors**: {hba}")
+
+        st.subheader("Lipinski’s Rule of 5")
+        lipinski = mw < 500 and logp < 5 and hbd <= 5 and hba <= 10
+        if lipinski:
+            st.success("✅ Passes Lipinski's Rule")
         else:
-            st.error(f"❌ **Not drug-like**: Only passes {passed_rules}/4 rules")
-            
-    except Exception as e:
-        st.error(f"Error processing SMILES: {str(e)}")
-        st.info("Please check that you've entered a valid SMILES string.")
+            st.error("❌ Fails Lipinski's Rule")
 
-# Add some example SMILES for testing
-st.subheader("Example SMILES to try:")
-examples = {
-    "Aspirin": "CC(=O)Oc1ccccc1C(=O)O",
-    "Caffeine": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
-    "Ibuprofen": "CC(C)Cc1ccc(C(C)C(=O)O)cc1",
-    "Paracetamol": "CC(=O)Nc1ccc(O)cc1"
-}
+        st.subheader("Selected ADMET Properties")
+        st.write(f"**Human Intestinal Absorption**: {props.get('HIA', 'N/A')}")
+        st.write(f"**CYP1A2 Inhibitor**: {props.get('CYP1A2_inh', 'N/A')}")
+        st.write(f"**hERG Blocker**: {props.get('hERG', 'N/A')}")
+        st.write(f"**Ames Toxicity**: {props.get('AMES', 'N/A')}")
+        st.write(f"**Carcinogenicity**: {props.get('Carcinogens', 'N/A')}")
+        st.write(f"**LD50 (rat, oral)**: {props.get('LD50', 'N/A')}")
 
-cols = st.columns(len(examples))
-for i, (name, smile) in enumerate(examples.items()):
-    with cols[i]:
-        if st.button(f"{name}", key=f"btn_{i}"):
-            st.rerun()
+    else:
+        st.error("Failed to retrieve data. Make sure the SMILES is valid.")
