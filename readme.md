@@ -6,7 +6,7 @@ A simple Streamlit web app to evaluate molecular drug-likeness using SMILES stri
 - Molecular descriptors (MW, LogP, HBD, HBA)
 
 ## 🚀 Try it Live
-[Live App Link](https://your-username.streamlit.app) ← replace after deployment
+[Live App Link](https://your-username.streamlit.app)
 
 ## 🧪 Example SMILES
 - Aspirin: `CC(=O)Oc1ccccc1C(=O)O`
